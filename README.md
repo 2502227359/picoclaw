@@ -476,6 +476,35 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 └── USER.md           # User preferences
 ```
 
+### Knowledge Base (RAG)
+
+Enable RAG to retrieve your notes and answer with citations.
+
+```bash
+# 1. Configure rag + embedding + vector_db in config.json
+# 2. Rebuild index after your notes update
+picoclaw rag index
+```
+
+Trigger rules:
+
+* Auto: medical questions trigger search
+* Force search: prefix with `笔记：`
+* Skip search: prefix with `不查：`
+
+Optional auto index:
+
+```json
+"rag": {
+  "auto_index": {
+    "enabled": true,
+    "interval_hours": 12
+  }
+}
+```
+
+When enabled, the gateway runs incremental indexing every N hours. You can still run `picoclaw rag index` once after enabling to build the first index.
+
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.

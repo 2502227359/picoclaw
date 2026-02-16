@@ -49,6 +49,7 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	RAG       RagConfig       `json:"rag"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	mu        sync.RWMutex
@@ -215,6 +216,51 @@ type ToolsConfig struct {
 	Web WebToolsConfig `json:"web"`
 }
 
+type RagConfig struct {
+	Enabled           bool             `json:"enabled" env:"PICOCLAW_RAG_ENABLED"`
+	VaultPath         string           `json:"vault_path" env:"PICOCLAW_RAG_VAULT_PATH"`
+	ChunkSize         int              `json:"chunk_size" env:"PICOCLAW_RAG_CHUNK_SIZE"`
+	ChunkOverlap      int              `json:"chunk_overlap" env:"PICOCLAW_RAG_CHUNK_OVERLAP"`
+	TopK              int              `json:"top_k" env:"PICOCLAW_RAG_TOP_K"`
+	MinSimilarity     float64          `json:"min_similarity" env:"PICOCLAW_RAG_MIN_SIMILARITY"`
+	SnippetMaxChars   int              `json:"snippet_max_chars" env:"PICOCLAW_RAG_SNIPPET_MAX_CHARS"`
+	IncludePatterns   []string         `json:"include_patterns" env:"PICOCLAW_RAG_INCLUDE_PATTERNS"`
+	ExcludePatterns   []string         `json:"exclude_patterns" env:"PICOCLAW_RAG_EXCLUDE_PATTERNS"`
+	AnswerWithSources bool             `json:"answer_with_sources" env:"PICOCLAW_RAG_ANSWER_WITH_SOURCES"`
+	FallbackToLLM     bool             `json:"fallback_to_llm" env:"PICOCLAW_RAG_FALLBACK_TO_LLM"`
+	Trigger           RagTriggerConfig `json:"trigger"`
+	Embedding         RagEmbeddingConfig `json:"embedding"`
+	VectorDB          RagVectorDBConfig  `json:"vector_db"`
+	AutoIndex         RagAutoIndexConfig `json:"auto_index"`
+}
+
+type RagTriggerConfig struct {
+	Auto          bool     `json:"auto" env:"PICOCLAW_RAG_TRIGGER_AUTO"`
+	ForcePrefixes []string `json:"force_prefixes" env:"PICOCLAW_RAG_TRIGGER_FORCE_PREFIXES"`
+	SkipPrefixes  []string `json:"skip_prefixes" env:"PICOCLAW_RAG_TRIGGER_SKIP_PREFIXES"`
+	AutoKeywords  []string `json:"auto_keywords" env:"PICOCLAW_RAG_TRIGGER_AUTO_KEYWORDS"`
+}
+
+type RagEmbeddingConfig struct {
+	APIKey         string `json:"api_key" env:"PICOCLAW_RAG_EMBEDDING_API_KEY"`
+	APIBase        string `json:"api_base" env:"PICOCLAW_RAG_EMBEDDING_API_BASE"`
+	Model          string `json:"model" env:"PICOCLAW_RAG_EMBEDDING_MODEL"`
+	Dimension      int    `json:"dimension" env:"PICOCLAW_RAG_EMBEDDING_DIMENSION"`
+	BatchSize      int    `json:"batch_size" env:"PICOCLAW_RAG_EMBEDDING_BATCH_SIZE"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"PICOCLAW_RAG_EMBEDDING_TIMEOUT_SECONDS"`
+}
+
+type RagVectorDBConfig struct {
+	URL            string `json:"url" env:"PICOCLAW_RAG_VECTOR_DB_URL"`
+	Collection     string `json:"collection" env:"PICOCLAW_RAG_VECTOR_DB_COLLECTION"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"PICOCLAW_RAG_VECTOR_DB_TIMEOUT_SECONDS"`
+}
+
+type RagAutoIndexConfig struct {
+	Enabled       bool `json:"enabled" env:"PICOCLAW_RAG_AUTO_INDEX_ENABLED"`
+	IntervalHours int  `json:"interval_hours" env:"PICOCLAW_RAG_AUTO_INDEX_INTERVAL_HOURS"`
+}
+
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
@@ -321,6 +367,48 @@ func DefaultConfig() *Config {
 					Enabled:    true,
 					MaxResults: 5,
 				},
+			},
+		},
+		RAG: RagConfig{
+			Enabled:         false,
+			VaultPath:       "/vault",
+			ChunkSize:       800,
+			ChunkOverlap:    120,
+			TopK:            6,
+			MinSimilarity:   0.25,
+			SnippetMaxChars: 1200,
+			IncludePatterns: []string{},
+			ExcludePatterns: []string{".obsidian/**", ".trash/**"},
+			AnswerWithSources: true,
+			FallbackToLLM:     false,
+			Trigger: RagTriggerConfig{
+				Auto:          true,
+				ForcePrefixes: []string{"笔记:", "笔记："},
+				SkipPrefixes:  []string{"不查:", "不查："},
+				AutoKeywords: []string{
+					"诊断", "鉴别", "治疗", "用药", "剂量", "不良反应", "适应症", "禁忌",
+					"指南", "病例", "症状", "体征", "检查", "影像", "化验", "血常规", "生化",
+					"CT", "MRI", "超声", "心电图", "预后", "并发症",
+					"diagnosis", "differential", "treatment", "dose", "contraindication",
+					"symptom", "sign", "lab", "imaging", "prognosis",
+				},
+			},
+			Embedding: RagEmbeddingConfig{
+				APIBase:        "",
+				APIKey:         "",
+				Model:          "",
+				Dimension:      0,
+				BatchSize:      16,
+				TimeoutSeconds: 60,
+			},
+			VectorDB: RagVectorDBConfig{
+				URL:            "http://qdrant:6333",
+				Collection:     "picoclaw_notes",
+				TimeoutSeconds: 30,
+			},
+			AutoIndex: RagAutoIndexConfig{
+				Enabled:       false,
+				IntervalHours: 12,
 			},
 		},
 		Heartbeat: HeartbeatConfig{

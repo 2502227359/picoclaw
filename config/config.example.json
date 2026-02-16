@@ -121,6 +121,48 @@
       }
     }
   },
+  "rag": {
+    "enabled": false,
+    "vault_path": "/vault",
+    "chunk_size": 800,
+    "chunk_overlap": 120,
+    "top_k": 6,
+    "min_similarity": 0.25,
+    "snippet_max_chars": 1200,
+    "include_patterns": [],
+    "exclude_patterns": [".obsidian/**", ".trash/**"],
+    "answer_with_sources": true,
+    "fallback_to_llm": false,
+    "trigger": {
+      "auto": true,
+      "force_prefixes": ["笔记:", "笔记："],
+      "skip_prefixes": ["不查:", "不查："],
+      "auto_keywords": [
+        "诊断", "鉴别", "治疗", "用药", "剂量", "不良反应", "适应症", "禁忌",
+        "指南", "病例", "症状", "体征", "检查", "影像", "化验", "血常规", "生化",
+        "CT", "MRI", "超声", "心电图", "预后", "并发症",
+        "diagnosis", "differential", "treatment", "dose", "contraindication",
+        "symptom", "sign", "lab", "imaging", "prognosis"
+      ]
+    },
+    "embedding": {
+      "api_key": "YOUR_EMBEDDING_API_KEY",
+      "api_base": "https://api.example.com/v1",
+      "model": "your-embedding-model",
+      "dimension": 0,
+      "batch_size": 16,
+      "timeout_seconds": 60
+    },
+    "vector_db": {
+      "url": "http://qdrant:6333",
+      "collection": "picoclaw_notes",
+      "timeout_seconds": 30
+    },
+    "auto_index": {
+      "enabled": false,
+      "interval_hours": 12
+    }
+  },
   "heartbeat": {
     "enabled": true,
     "interval": 30

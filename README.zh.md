@@ -438,6 +438,37 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ```
 
+### 知识库检索 (RAG)
+
+启用后，PicoClaw 会在需要时检索你的笔记并带来源引用。
+
+基本流程：
+
+```bash
+# 1. 配置 config.json 里的 rag + embedding + vector_db
+# 2. 每次笔记更新后运行一次索引
+picoclaw rag index
+```
+
+触发方式：
+
+* 自动：医学相关问题自动检索
+* 强制检索：以 `笔记：` 开头
+* 强制不检索：以 `不查：` 开头
+
+可选：自动索引
+
+```json
+"rag": {
+  "auto_index": {
+    "enabled": true,
+    "interval_hours": 12
+  }
+}
+```
+
+开启后，网关会每隔 N 小时做一次增量索引。首次开启建议手动执行一次 `picoclaw rag index`。
+
 ### 心跳 / 周期性任务 (Heartbeat)
 
 PicoClaw 可以自动执行周期性任务。在工作区创建 `HEARTBEAT.md` 文件：

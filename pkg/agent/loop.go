@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/rag"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -41,6 +42,7 @@ type AgentLoop struct {
 	state          *state.Manager
 	contextBuilder *ContextBuilder
 	tools          *tools.ToolRegistry
+	ragService     *rag.Service
 	running        atomic.Bool
 	summarizing    sync.Map // Tracks which sessions are currently being summarized
 	channelManager *channels.Manager
@@ -136,6 +138,17 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
 
+	var ragService *rag.Service
+	if cfg.RAG.Enabled {
+		if svc, err := rag.NewService(cfg, workspace); err == nil {
+			ragService = svc
+		} else {
+			logger.WarnCF("rag", "RAG disabled due to config error", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}
+
 	return &AgentLoop{
 		bus:            msgBus,
 		provider:       provider,
@@ -147,6 +160,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 		state:          stateManager,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
+		ragService:     ragService,
 		summarizing:    sync.Map{},
 	}
 }
@@ -362,20 +376,53 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		history = al.sessions.GetHistory(opts.SessionKey)
 		summary = al.sessions.GetSummary(opts.SessionKey)
 	}
+	userMessage := opts.UserMessage
+	llmMessage := opts.UserMessage
+	var ragSources []rag.SearchResult
+	if al.ragService != nil && !opts.NoHistory {
+		decision := al.ragService.TriggerDecision(userMessage)
+		if decision.CleanedMessage != "" {
+			userMessage = decision.CleanedMessage
+			llmMessage = decision.CleanedMessage
+		}
+		if decision.ShouldSearch {
+			results, err := al.ragService.Search(ctx, userMessage)
+			if err != nil {
+				logger.WarnCF("rag", "RAG search failed", map[string]interface{}{
+					"error": err.Error(),
+				})
+			} else if len(results) == 0 {
+				if !al.ragService.Config().FallbackToLLM {
+					finalContent := "未在你的知识库中找到相关内容。你可以尝试换一种问法，或使用“不查：”让我直接回答。"
+					al.sessions.AddMessage(opts.SessionKey, "user", userMessage)
+					al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+					al.sessions.Save(opts.SessionKey)
+					return finalContent, nil
+				}
+			} else {
+				ragSources = results
+				ragContext := al.ragService.FormatContext(results)
+				llmMessage = userMessage + "\n\n" + ragContext
+			}
+		}
+	}
+
 	messages := al.contextBuilder.BuildMessages(
 		history,
 		summary,
-		opts.UserMessage,
+		llmMessage,
 		nil,
 		opts.Channel,
 		opts.ChatID,
 	)
 
 	// 3. Save user message to session
-	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	al.sessions.AddMessage(opts.SessionKey, "user", userMessage)
 
 	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
+	optsForLLM := opts
+	optsForLLM.UserMessage = llmMessage
+	finalContent, iteration, err := al.runLLMIteration(ctx, messages, optsForLLM)
 	if err != nil {
 		return "", err
 	}
@@ -386,6 +433,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// 5. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
+	}
+
+	if al.ragService != nil && al.ragService.Config().AnswerWithSources && len(ragSources) > 0 {
+		if !strings.Contains(finalContent, "Sources:") && !strings.Contains(finalContent, "来源:") {
+			finalContent = finalContent + "\n\n" + al.ragService.FormatSources(ragSources)
+		}
 	}
 
 	// 6. Save final assistant message to session

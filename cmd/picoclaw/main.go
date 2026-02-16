@@ -34,6 +34,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/rag"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -142,6 +143,8 @@ func main() {
 		authCmd()
 	case "cron":
 		cronCmd()
+	case "rag":
+		ragCmd()
 	case "skills":
 		if len(os.Args) < 3 {
 			skillsHelp()
@@ -211,6 +214,7 @@ func printHelp() {
 	fmt.Println("  gateway     Start picoclaw gateway")
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
+	fmt.Println("  rag         Manage knowledge base indexing")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
@@ -637,6 +641,8 @@ func gatewayCmd() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	startRagAutoIndex(ctx, cfg)
+
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
@@ -686,6 +692,57 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+func startRagAutoIndex(ctx context.Context, cfg *config.Config) {
+	if !cfg.RAG.Enabled || !cfg.RAG.AutoIndex.Enabled {
+		return
+	}
+
+	intervalHours := cfg.RAG.AutoIndex.IntervalHours
+	if intervalHours <= 0 {
+		intervalHours = 12
+	}
+
+	service, err := rag.NewService(cfg, cfg.WorkspacePath())
+	if err != nil {
+		logger.WarnCF("rag", "Auto index disabled due to config error", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	logger.InfoCF("rag", "Auto index scheduled", map[string]interface{}{
+		"interval_hours": intervalHours,
+	})
+
+	interval := time.Duration(intervalHours) * time.Hour
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				summary, err := service.Index(ctx, rag.IndexOptions{ReindexAll: false})
+				if err != nil {
+					logger.WarnCF("rag", "Auto index failed", map[string]interface{}{
+						"error": err.Error(),
+					})
+					continue
+				}
+				logger.InfoCF("rag", "Auto index completed", map[string]interface{}{
+					"total_files":   summary.TotalFiles,
+					"indexed_files": summary.IndexedFiles,
+					"updated_files": summary.UpdatedFiles,
+					"removed_files": summary.RemovedFiles,
+					"skipped_files": summary.SkippedFiles,
+					"chunks":        summary.Chunks,
+				})
+			}
+		}
+	}()
 }
 
 func statusCmd() {
